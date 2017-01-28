@@ -366,11 +366,14 @@ long (*orig_custom_syscall)(void);
  */
 static int init_function(void) {
 
-
-
-
-
-
+	spin_lock(&calltable_lock);
+	set_addr_rw((unsigned long)sys_call_table);
+	table[0].f = sys_call_table[0];
+	table[0].intercepted = 0;
+	table[0].monitored = 0;
+	sys_call_table[0] = my_syscall;
+	set_addr_ro((unsigned long)sys_call_table);
+	spin_unlock(&calltable_lock);
 
 	return 0;
 }
@@ -387,11 +390,11 @@ static int init_function(void) {
  */
 static void exit_function(void)
 {        
-
-
-
-
-
+	spin_lock(&calltable_lock);
+	set_addr_rw((unsigned long)sys_call_table);
+	sys_call_table[0] = table[0].f;
+	set_addr_ro((unsigned long)sys_call_table);
+	spin_unlock(&calltable_lock);
 
 }
 
