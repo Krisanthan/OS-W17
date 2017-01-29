@@ -276,8 +276,17 @@ void my_exit_group(int status)
  * - Don't forget to call the original system call, so we allow processes to proceed as normal.
  */
 asmlinkage long interceptor(struct pt_regs reg) {
-
-
+	
+	if(check_pid_monitored(reg, current->pid) == 1){
+		log_message(current->pid, reg.ax);
+		log_message(current->pid, reg.bx);
+		log_message(current->pid, reg.cx);
+		log_message(current->pid, reg.dx);
+		log_message(current->pid, reg.si);
+		log_message(current->pid, reg.di);
+		log_message(current->pid, reg.bp);
+	}
+	//call original system call
 
 
 
@@ -341,8 +350,6 @@ asmlinkage long my_syscall(int cmd, int syscall, int pid) {
 
 
 	return 0;
-}
-
 /**
  *
  */
