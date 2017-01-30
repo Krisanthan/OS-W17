@@ -279,20 +279,31 @@ void my_exit_group(int status)
  */
 asmlinkage long interceptor(struct pt_regs reg) {
 	
-	if(check_pid_monitored(reg, current->pid) == 1){
-		log_message(current->pid, reg.ax);
-		log_message(current->pid, reg.bx);
-		log_message(current->pid, reg.cx);
-		log_message(current->pid, reg.dx);
-		log_message(current->pid, reg.si);
-		log_message(current->pid, reg.di);
-		log_message(current->pid, reg.bp);
+	switch(table[reg.ax].monitored) {
+		// Nothing is monitored, so this process shouldn't be, simply call original function.
+		case 0:
+			break;
+
+		// Some pids are monitored, check if this process is monitored, call original function when done.
+		case 1:
+			if(check_pid_monitored(reg.ax, current->pid)){
+				log_message(current->pid, reg.ax, reg.bx, reg.cx, reg.dx, reg.si, reg.di, reg.bp);
+			}
+			break;
+
+		// All pids are monitored, check if this process is in the blacklist, call original function when done.
+		case 2:
+			if (!check_pid_monitored(reg.ax, current->pid)) {
+				log_message(current->pid, reg.ax, reg.bx, reg.cx, reg.dx, reg.si, reg.di, reg.bp);
+			}
+			break;
+		
+		default:
+			break;
 	}
-	//call original system call
-
-
-
-	return 0; // Just a placeholder, so it compiles with no warnings!
+	
+	//Calling the original system call
+	return table[reg.ax].f(reg);
 }
 
 /**
@@ -361,6 +372,8 @@ asmlinkage long my_syscall(int cmd, int syscall, int pid) {
 				return -EBUSY;
 			}
 			spin_lock(&calltable_lock);
+			table[syscall].intercepted = 1;
+			table[syscall].f = sys_call_table[syscall];
 			set_addr_rw((unsigned long)sys_call_table);
 			sys_call_table[syscall] = &interceptor;
 			set_addr_ro((unsigned long)sys_call_table);
@@ -378,9 +391,10 @@ asmlinkage long my_syscall(int cmd, int syscall, int pid) {
 			set_addr_rw((unsigned long)sys_call_table);
 			sys_call_table[syscall] = table[syscall].f;
 			set_addr_ro((unsigned long)sys_call_table);
-			spin_unlock(&calltable_lock);
+			destroy_list(syscall);
 			table[syscall].intercepted = 0;
 			table[syscall].monitored = 0;
+			spin_unlock(&calltable_lock);
 			break;
 
 		case REQUEST_START_MONITORING:
@@ -397,9 +411,14 @@ asmlinkage long my_syscall(int cmd, int syscall, int pid) {
 				return -EBUSY;
 			}
 			spin_lock(&pidlist_lock);
-			if (add_pid_sysc(pid, syscall) != 0) {
-				spin_unlock(&pidlist_lock);
-				return -ENOMEM;
+			if (pid != 0) {
+				if (add_pid_sysc(pid, syscall) != 0) {
+					spin_unlock(&pidlist_lock);
+					return -ENOMEM;
+				}
+				table[syscall].monitored = 1;
+			} else {
+				table[syscall].monitored = 2;
 			}
 			spin_unlock(&pidlist_lock);
 			break;
@@ -415,7 +434,11 @@ asmlinkage long my_syscall(int cmd, int syscall, int pid) {
 				}
 			}
 			spin_lock(&pidlist_lock);
-			del_pid_sysc(pid, syscall);
+			if (pid != 0) {
+				del_pid_sysc(pid, syscall);
+			} else {
+				table[syscall].monitored = 0;
+			}
 			spin_unlock(&pidlist_lock);
 			break;
 
@@ -424,6 +447,7 @@ asmlinkage long my_syscall(int cmd, int syscall, int pid) {
 	}
 
 	return 0;
+}
 /**
  *
  */
