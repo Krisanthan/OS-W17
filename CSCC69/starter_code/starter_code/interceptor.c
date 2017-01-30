@@ -357,20 +357,24 @@ asmlinkage long interceptor(struct pt_regs reg) {
  */
 asmlinkage long my_syscall(int cmd, int syscall, int pid) {
 
-	int ret = 0;
-
+	// Check if the syscall number is valid, i.e. not negative, and not > NR_syscalls.
 	if (syscall < 1 || syscall > NR_syscalls) {
 		return -EINVAL;
 	}
-	switch(cmd) {
 
+	// Check which command is called.
+	switch(cmd) {
+		// Intercept command.
 		case REQUEST_SYSCALL_INTERCEPT:
+			// Check if called is root.
 			if (current_uid() != 0) {
 				return -EPERM;
 			}
+			// Check if the system call has already been intercepted.
 			if (table[syscall].intercepted) {
 				return -EBUSY;
 			}
+			// Intercept the call if no issues.
 			spin_lock(&calltable_lock);
 			table[syscall].intercepted = 1;
 			table[syscall].f = sys_call_table[syscall];
@@ -380,70 +384,90 @@ asmlinkage long my_syscall(int cmd, int syscall, int pid) {
 			spin_unlock(&calltable_lock);
 			break;
 
+		// Release command.
 		case REQUEST_SYSCALL_RELEASE:
+			// Check if called is root.
 			if (current_uid() != 0) {
 				return -EPERM;
 			}
+			// Check if the system call has already been release/not intercepted.
 			if (!table[syscall].intercepted) {
 				return -EINVAL;
 			}
+			// Release the call if no issues.
 			spin_lock(&calltable_lock);
 			set_addr_rw((unsigned long)sys_call_table);
 			sys_call_table[syscall] = table[syscall].f;
 			set_addr_ro((unsigned long)sys_call_table);
 			destroy_list(syscall);
 			table[syscall].intercepted = 0;
-			table[syscall].monitored = 0;
 			spin_unlock(&calltable_lock);
 			break;
 
+		// Monitoring command.
 		case REQUEST_START_MONITORING:
+			// Check if pid is not negative and if it's an existing pid or if it's 0.
+			// Also check if the syscall has been intercepted, in order to monitor.
 			if (pid < 0 || (pid_task(find_vpid(pid), PIDTYPE_PID) == NULL && pid != 0)
 				|| !table[syscall].intercepted) {
 				return -EINVAL;
 			}
+			// Check if calling process is root.
 			if (current_uid() != 0) {
+				// If not, check if pid is not 0 and is not owned by the calling process.
 				if (pid == 0 || check_pid_from_list(current->pid, pid) != 0) {
 					return -EPERM;
 				}
 			}
+			// Check if the pid is already monitored.
 			if (check_pid_monitored(syscall, pid)) {
 				return -EBUSY;
 			}
+			// If no issues, start monitoring the pid.
 			spin_lock(&pidlist_lock);
+			// Monitor the pid if there's memory and not 0.
 			if (pid != 0) {
 				if (add_pid_sysc(pid, syscall) != 0) {
 					spin_unlock(&pidlist_lock);
 					return -ENOMEM;
 				}
 				table[syscall].monitored = 1;
+			// Monitor all the pids if pid is 0.
 			} else {
+				destroy_list(syscall);
 				table[syscall].monitored = 2;
 			}
 			spin_unlock(&pidlist_lock);
 			break;
 
 		case REQUEST_STOP_MONITORING:
+			// Check if pid is not negative and if it's an existing pid or if it's 0.
+			// Also check if the syscall has been intercepted and the pid is monitored, in order to stop monitoring.
 			if (pid < 0 || (pid_task(find_vpid(pid), PIDTYPE_PID) == NULL && pid != 0)
-				|| !check_pid_monitored(syscall, pid)) {
+				|| !table[syscall].intercepted || !check_pid_monitored(syscall, pid)) {
 				return -EINVAL;
 			}
+			// Check if calling process is root.
 			if (current_uid() != 0) {
+				// If not, check if pid is not 0 and is not owned by the calling process.
 				if (pid == 0 || check_pid_from_list(current->pid, pid) != 0) {
 					return -EPERM;
 				}
 			}
+			// If no issues, stop monitoring the pid.
 			spin_lock(&pidlist_lock);
+			// Stop monitoring the pid if it's not 0.
 			if (pid != 0) {
 				del_pid_sysc(pid, syscall);
+			// Stop monitoring all the pids if pid is 0.
 			} else {
-				table[syscall].monitored = 0;
+				destroy_list(syscall);
 			}
 			spin_unlock(&pidlist_lock);
 			break;
 
 		default:
-			ret = -EINVAL;
+			return -EINVAL;
 	}
 
 	return 0;
@@ -508,6 +532,7 @@ static void exit_function(void)
 	for (i = 0; i < NR_syscalls+1; i++) {
 		destroy_list(i);
 	}
+	
 	spin_lock(&calltable_lock);
 	set_addr_rw((unsigned long)sys_call_table);
 	sys_call_table[MY_CUSTOM_SYSCALL] = orig_custom_syscall;
