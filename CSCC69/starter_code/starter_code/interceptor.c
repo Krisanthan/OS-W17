@@ -376,8 +376,10 @@ asmlinkage long my_syscall(int cmd, int syscall, int pid) {
 			}
 			// Intercept the call if no issues.
 			spin_lock(&calltable_lock);
+			// Bookkeeping values.
 			table[syscall].intercepted = 1;
 			table[syscall].f = sys_call_table[syscall];
+
 			set_addr_rw((unsigned long)sys_call_table);
 			sys_call_table[syscall] = &interceptor;
 			set_addr_ro((unsigned long)sys_call_table);
@@ -399,6 +401,7 @@ asmlinkage long my_syscall(int cmd, int syscall, int pid) {
 			set_addr_rw((unsigned long)sys_call_table);
 			sys_call_table[syscall] = table[syscall].f;
 			set_addr_ro((unsigned long)sys_call_table);
+			// Reset bookkeeping values.
 			destroy_list(syscall);
 			table[syscall].intercepted = 0;
 			spin_unlock(&calltable_lock);
@@ -432,19 +435,25 @@ asmlinkage long my_syscall(int cmd, int syscall, int pid) {
 					return -ENOMEM;
 				}
 				table[syscall].monitored = 1;
-			// Monitor all the pids if pid is 0.
 			} else {
+				// Monitor all the pids if pid is 0,
+				// but also the list must not be empty and not already monitoring all pids.
+				if (table[syscall].monitored == 2 && table[syscall].listcount == 0) {
+					spin_unlock(&pidlist_lock);
+					return -EBUSY;
+				}
 				destroy_list(syscall);
 				table[syscall].monitored = 2;
+				
 			}
 			spin_unlock(&pidlist_lock);
 			break;
 
 		case REQUEST_STOP_MONITORING:
 			// Check if pid is not negative and if it's an existing pid or if it's 0.
-			// Also check if the syscall has been intercepted and the pid is monitored, in order to stop monitoring.
+			// Also check if the syscall has been intercepted.
 			if (pid < 0 || (pid_task(find_vpid(pid), PIDTYPE_PID) == NULL && pid != 0)
-				|| !table[syscall].intercepted || !check_pid_monitored(syscall, pid)) {
+				|| !table[syscall].intercepted) {
 				return -EINVAL;
 			}
 			// Check if calling process is root.
@@ -454,13 +463,22 @@ asmlinkage long my_syscall(int cmd, int syscall, int pid) {
 					return -EPERM;
 				}
 			}
+			// Check if the pid is monitored when pid is not 0, in order to stop monitoring.
+			if (!check_pid_monitored(syscall, pid) && pid != 0) {
+				return -EINVAL;
+			}
 			// If no issues, stop monitoring the pid.
 			spin_lock(&pidlist_lock);
 			// Stop monitoring the pid if it's not 0.
 			if (pid != 0) {
 				del_pid_sysc(pid, syscall);
-			// Stop monitoring all the pids if pid is 0.
 			} else {
+				// Stop monitoring all the pids if pid is 0 and pid list is not empty
+				// or not all pids are monitored
+				if (table[syscall].listcount == 0 && table[syscall].monitored != 2) {
+					spin_unlock(&pidlist_lock);
+					return -EINVAL;
+				}
 				destroy_list(syscall);
 			}
 			spin_unlock(&pidlist_lock);
