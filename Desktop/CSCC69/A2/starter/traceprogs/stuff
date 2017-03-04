@@ -1,0 +1,3 @@
+rm matmul simpleloop tr-matmul.ref tr-simpleloop.ref blocked tr-blocked.ref
+
+

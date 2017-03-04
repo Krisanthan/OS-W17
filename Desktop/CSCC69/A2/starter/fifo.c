@@ -12,13 +12,16 @@ extern int debug;
 
 extern struct frame *coremap;
 
+int first;
+
 /* Page to evict is chosen using the fifo algorithm.
  * Returns the page frame number (which is also the index in the coremap)
  * for the page that is to be evicted.
  */
 int fifo_evict() {
-	
-	return 0;
+	int curr = first;
+	first++;
+	return curr;
 }
 
 /* This function is called on each access to a page to update any information
@@ -27,11 +30,11 @@ int fifo_evict() {
  */
 void fifo_ref(pgtbl_entry_t *p) {
 
-	return;
 }
 
 /* Initialize any data structures needed for this 
  * replacement algorithm 
  */
 void fifo_init() {
+	first = 0;
 }
