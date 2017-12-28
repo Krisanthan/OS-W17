@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name">GuessTheNumber</string>
+    <string name="hello_world">Hello world!</string>
+    <string name="action_settings">Settings</string>
+    <string name="guess_a_num">Guess a number between 0 and 100: </string>
+    <string name="title_activity_higher_num">HigherNum</string>
+    <string name="send">Send</string>
+    <string name="higher">is higher than the number</string>
+    <string name="title_activity_lower_num">LowerNum</string>
+    <string name="lower">is lower than the number</string>
+
+</resources>
