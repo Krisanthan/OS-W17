@@ -29,9 +29,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h> // for memset
-#include "timer.h"
 
-#define PAD 120
+#define PAD 504
 
 struct record {
 	double value;
@@ -54,7 +53,7 @@ void Print_matrix(struct record C[], int n);
 int main(int argc, char* argv[]) {
 	volatile char MARKER_START, MARKER_END;
 	/* Record marker addresses */
-	FILE* marker_fp = fopen("matmul.marker","w");
+	FILE* marker_fp = fopen("marker","w");
 	if(marker_fp == NULL ) {
 		perror("Couldn't open marker file:");
 		exit(1);
@@ -64,7 +63,6 @@ int main(int argc, char* argv[]) {
 
 	MARKER_START = 33;
 
-   double start1, finish1;
 
    if (argc != 2) Usage(argv[0]);
    n = strtol(argv[1], NULL, 10);
@@ -79,16 +77,12 @@ int main(int argc, char* argv[]) {
 
    Get_matrices(A, B, n);
 
-   GET_TIME(start1);
    Mat_mult();
-   GET_TIME(finish1);
 #  ifdef DEBUG 
    printf("Standard algorithm\n");
    Print_matrix(C, n);
 #  endif
 
-   printf("Elapsed time for standard algorithm = %e seconds\n",
-         finish1-start1);
 
    free(A);
    free(B);
